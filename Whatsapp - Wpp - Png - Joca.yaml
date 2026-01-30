@@ -1,0 +1,47 @@
+zabbix_export:
+  version: '7.4'
+  media_types:
+    - name: 'Whatsapp - Wpp - Png - Joca'
+      type: SCRIPT
+      script_name: jocawpp.py
+      parameters:
+        - sortorder: '0'
+          value: '{ALERT.MESSAGE}'
+        - sortorder: '1'
+          value: '{ALERT.SUBJECT}'
+        - sortorder: '2'
+          value: '{ALERT.SENDTO}'
+      message_templates:
+        - event_source: TRIGGERS
+          operation_mode: PROBLEM
+          subject: '❌ *ALERTA DE INCIDENTE* ❌'
+          message: |
+            ━━━━━━━━━━━━━━━━━━━━━━
+            🏠 *Host:* {HOST.NAME}
+            🌐 *IP:* {HOST.CONN}
+            🛠️ *Item:* {ITEM.NAME}
+            ❌ *Problema:* {EVENT.NAME}
+            🔄 *Status Anterior:* {?last(//{ITEM.KEY},#2)}
+            📈 *Status Atual:* {EVENT.OPDATA}
+            ⚠️ *Severidade:* {EVENT.SEVERITY}
+            ⏰ *Iniciado em:* {EVENT.TIME} - {EVENT.DATE}
+            ━━━━━━━━━━━━━━━━━━━━━━
+            📍 *Ação:* Verificar dispositivo imediatamente!
+             🆔 *Item ID:* {ITEM.ID}
+            🚀Planalto Net CGR🚀
+        - event_source: TRIGGERS
+          operation_mode: RECOVERY
+          subject: '🟢 *PROBLEMA RESOLVIDO* 🟢'
+          message: |
+            ━━━━━━━━━━━━━━━━━━━━━━ 
+            🏠 *Host:* {HOST.NAME}
+            🌐 *IP:* {HOST.CONN}
+            🛠️ *Item:* {ITEM.NAME}
+            ✅ *Resolvido:* {EVENT.NAME}
+            📉 *Status Anterior:* {?last(//{ITEM.KEY},#2)}
+            📈 *Status Atual:* {EVENT.OPDATA}
+            ⏱️ *Duração:* {EVENT.DURATION}
+            🏁 *Resolvido em:* {EVENT.RECOVERY.TIME} - {EVENT.RECOVERY.DATE} 
+            ━━━━━━━━━━━━━━━━━━━━━━ 
+            🆔 *Item ID:* {ITEM.ID}
+            🚀Planalto Net CGR🚀

@@ -1,0 +1,98 @@
+#!/usr/bin/python3
+# Planalto Net CGR - Template de Integração Zabbix + WhatsApp
+import os, re, sys, requests, json, datetime
+
+# ==========================================
+# 1. ÁREA DE CONFIGURAÇÃO (Edite após copiar)
+# ==========================================
+CONFIG = {
+    "WPP_URL": 'http://127.0.0.1:21465/api/SUA_SESSAO_AQUI',
+    "WPP_TOKEN": 'SEU_TOKEN_TOKEN_AQUI',
+    "ZABBIX_URL": 'http://SEU_IP_OU_DNS/zabbix',
+    "ZABBIX_USER": 'whatsapp',
+    "ZABBIX_PASS": 'Admin@123', # Senha padrão para exemplo
+    "LOG_FILE": '/tmp/zabbix_wpp_debug.log',
+    "MENSAO": "5581012345678"   # Número que será marcado nos grupos
+}
+
+# ==========================================
+# 2. FUNÇÕES DE SUPORTE
+# ==========================================
+def log_debug(msg):
+    agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    try:
+        with open(CONFIG["LOG_FILE"], 'a') as f:
+            f.write(f"[{agora}] {msg}\n")
+    except:
+        pass
+
+def processar_texto(texto):
+    # Inverte Data YYYY.MM.DD para DD/MM/YYYY
+    return re.sub(r'(\d{4})[./-](\d{2})[./-](\d{2})', r'\3/\2/\1', texto)
+
+def extrair_id(corpo):
+    # Localiza o Item ID para gerar o gráfico
+    if "Item ID:" in corpo:
+        trecho = corpo.split("Item ID:")[1][:30]
+        numeros = re.findall(r'\d+', trecho)
+        return numeros[0] if numeros else None
+    return None
+
+# ==========================================
+# 3. LÓGICA PRINCIPAL
+# ==========================================
+try:
+    # Captura argumentos do Zabbix (Mensagem, Título, Destinatário)
+    msg_corpo  = processar_texto(sys.argv[1])
+    msg_titulo = processar_texto(sys.argv[2])
+    msg_dest   = sys.argv[3].strip()
+
+    log_debug(f"Iniciando disparo para: {msg_dest}")
+    zbx_id = extrair_id(sys.argv[1])
+    envio_sucesso = False
+
+    with requests.Session() as session:
+        # Tenta baixar e enviar gráfico se o ID existir
+        if zbx_id:
+            log_debug(f"Item ID {zbx_id} detectado. Autenticando no Zabbix...")
+            session.post(f'{CONFIG["ZABBIX_URL"]}/index.php', 
+                         data={'name': CONFIG["ZABBIX_USER"], 'password': CONFIG["ZABBIX_PASS"], 'enter': 'Sign in'}, 
+                         timeout=10)
+            
+            url_img = f'{CONFIG["ZABBIX_URL"]}/chart.php?itemids[0]={zbx_id}&width=800&height=300'
+            res = session.get(url_img, timeout=20)
+            
+            if res.status_code == 200 and 'image' in res.headers.get('Content-Type', ''):
+                path = f"/tmp/zbx_{zbx_id}.png"
+                with open(path, 'wb') as f: f.write(res.content)
+                
+                log_debug("Enviando imagem via WPPConnect...")
+                r = requests.post(f'{CONFIG["WPP_URL"]}/send-image', 
+                                     headers={'Authorization': f'Bearer {CONFIG["WPP_TOKEN"]}'}, 
+                                     data={'phone': msg_dest, 'caption': f"*{msg_titulo}*\n\n{msg_corpo}"}, 
+                                     files={'file': f}, timeout=40)
+                
+                if os.path.exists(path): os.remove(path)
+                if r.status_code in [200, 201]: envio_sucesso = True
+
+        # Se não houver gráfico ou o envio da imagem falhar, envia apenas texto
+        if not envio_sucesso:
+            log_debug("Enviando apenas texto (fallback)...")
+            requests.post(f'{CONFIG["WPP_URL"]}/send-message', 
+                         headers={'Authorization': f'Bearer {CONFIG["WPP_TOKEN"]}', 'Content-Type': 'application/json'}, 
+                         json={"phone": msg_dest, "message": f"*{msg_titulo}*\n\n{msg_corpo}"}, timeout=20)
+
+        # Envia a menção separada se for um grupo (@g.us)
+        if "@g.us" in msg_dest:
+            log_debug(f"Enviando menção para @{CONFIG['MENSAO']}")
+            payload_men = {
+                "phone": msg_dest,
+                "message": f"🔔 @{CONFIG['MENSAO']} Verifique o status acima.",
+                "options": {"mentions": [f"{CONFIG['MENSAO']}@c.us"]}
+            }
+            requests.post(f'{CONFIG["WPP_URL"]}/send-message', 
+                         headers={'Authorization': f'Bearer {CONFIG["WPP_TOKEN"]}', 'Content-Type': 'application/json'}, 
+                         json=payload_men, timeout=15)
+
+except Exception as e:
+    log_debug(f"ERRO CRÍTICO: {str(e)}")
