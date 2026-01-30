@@ -1,4 +1,4 @@
-🚀 Zabbix WhatsApp Integration - Planalto Net CGR
+🚀 Zabbix WhatsApp WPP Integration
 Este guia descreve como configurar o envio de alertas do Zabbix para o WhatsApp com gráficos e menções em grupo, utilizando o motor WPPConnect.
 
 1. Instalação do WPPConnect Server
