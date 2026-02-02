@@ -53,7 +53,7 @@ chmod +x /usr/lib/zabbix/alertscripts/jocawpp.py
 ## 4. Diferenciais do Script
 * **Regex:** Captura IDs no formato \`Item ID:{ITEM.ID}\`.
 * **Data:** Converte automaticamente para **DD/MM/YYYY**.
-* **Menção:** Notifica automaticamente o usuário **558181581814**.
+* **Menção:** Notifica automaticamente o usuário **558199999999**.
 
 ---
 
