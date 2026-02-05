@@ -21,7 +21,7 @@ pm2 log wppconnect-server
 ```
 
 ### B. Ambiente Python 3
-O script requer Python 3 e a biblioteca requests ja deve os ter instalados.
+O script requer Python 3 e a biblioteca requests, ja deve os ter instalados.
 
 ```bash
 sudo apt update
@@ -51,7 +51,7 @@ CONFIG = {
     "MENSAO": "558112345678" 
 }
 ```
-
+Caso nao queira que alguem seja mensionado , deixe assim "MENSAO":""
 ---
 
 ## 3. Permissoes de Sistema
