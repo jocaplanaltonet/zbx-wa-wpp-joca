@@ -1,0 +1,129 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# Planalto Net CGR - Script Final Zabbix + Gráfico + Menção Inteligente
+import os, re, sys, requests, json, datetime
+
+# ==========================================
+# 1. ÁREA DE CONFIGURAÇÃO
+# ==========================================
+CONFIG = {
+    "WPP_URL": 'http://127.0.0.1:21465/api/plnt',
+    "WPP_TOKEN": '$2b$10$sMn3zJy1NFPgQMmOSIoSGealQBi8MOxaEy_xojujhmoeXdOyl5qlm',
+    "ZABBIX_URL": 'http://127.0.0.1/zabbix',
+    "ZABBIX_USER": 'Admin',
+    "ZABBIX_PASS": 'zabbix',
+    "LOG_FILE": '/tmp/zabbix_wpp_debug.log',
+    # Deixe vazio "" para desativar a menção globalmente
+    "MENSAO_NUM": "558187654321" 
+}
+
+def log_debug(msg):
+    agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    try:
+        with open(CONFIG["LOG_FILE"], 'a') as f:
+            f.write(f"[{agora}] {msg}\n")
+    except: pass
+
+def extrair_id(corpo):
+    # Captura o ID do item para gerar o gráfico
+    match = re.search(r'Item ID:\s*(\d+)', corpo)
+    return match.group(1) if match else None
+
+def tratar_destino(raw_dest):
+    d = str(raw_dest).strip()
+    # Verifica se é ID de grupo (contém hífen ou padrão 1203...)
+    if "-" in d or (d.startswith("1203") and len(d) >= 18):
+        return (d if "@g.us" in d else f"{d}@g.us"), True
+    # Se for número individual
+    id_puro = "".join(filter(str.isdigit, d.split('@')[0]))
+    return id_puro, False
+
+# ==========================================
+# 2. LÓGICA DE EXECUÇÃO
+# ==========================================
+try:
+    if len(sys.argv) < 4:
+        log_debug("ERRO: Argumentos insuficientes (Corpo, Título, Destino)")
+        sys.exit(1)
+
+    msg_corpo  = sys.argv[1]
+    msg_titulo = sys.argv[2]
+    msg_dest, is_group = tratar_destino(sys.argv[3])
+    
+    zbx_id = extrair_id(msg_corpo)
+    envio_sucesso = False
+    real_chat_id = msg_dest 
+
+    headers = {
+        'Authorization': f'Bearer {CONFIG["WPP_TOKEN"]}',
+        'Content-Type': 'application/json'
+    }
+
+    with requests.Session() as session:
+        # --- PASSO 1: ENVIO DO TEXTO DO ALERTA ---
+        payload_texto = {
+            "phone": msg_dest, 
+            "message": f"*{msg_titulo}*\n{msg_corpo}",
+            "isGroup": is_group
+        }
+        r_text = session.post(f'{CONFIG["WPP_URL"]}/send-message', headers=headers, json=payload_texto, timeout=25)
+        
+        if r_text.status_code in [200, 201]:
+            envio_sucesso = True
+            try:
+                # Captura o chatId real para evitar erros em envios subsequentes
+                real_chat_id = r_text.json()['response'][0]['chatId']
+            except: pass
+        log_debug(f"TEXTO STATUS: {r_text.status_code}")
+
+        # --- PASSO 2: ENVIO DO GRÁFICO (IMAGEM) ---
+        if zbx_id and envio_sucesso:
+            try:
+                # Autenticação no Zabbix para pegar o cookie da imagem
+                session.post(f'{CONFIG["ZABBIX_URL"]}/index.php', 
+                             data={'name': CONFIG["ZABBIX_USER"], 'password': CONFIG["ZABBIX_PASS"], 'enter': 'Sign in'})
+                
+                url_img = f'{CONFIG["ZABBIX_URL"]}/chart.php?itemids[0]={zbx_id}&width=800&height=300'
+                res_img_file = session.get(url_img, timeout=30)
+                
+                if res_img_file.status_code == 200:
+                    img_path = f"/tmp/zbx_{zbx_id}.png"
+                    with open(img_path, 'wb') as f: f.write(res_img_file.content)
+                    
+                    with open(img_path, 'rb') as f_img:
+                        r_img = requests.post(
+                            f'{CONFIG["WPP_URL"]}/send-image', 
+                            headers={'Authorization': f'Bearer {CONFIG["WPP_TOKEN"]}'}, 
+                            data={'phone': real_chat_id, 'caption': f'📈 Gráfico: {msg_titulo}', 'isGroup': str(is_group).lower()}, 
+                            files={'file': f_img},
+                            timeout=45
+                        )
+                        log_debug(f"IMAGEM STATUS: {r_img.status_code}")
+                    
+                    if os.path.exists(img_path): os.remove(img_path)
+            except Exception as e_img:
+                log_debug(f"ERRO AO GERAR/ENVIAR IMAGEM: {e_img}")
+
+        # --- PASSO 3: MENÇÃO (SÓ SE FOR GRUPO E TIVER NÚMERO CONFIGURADO) ---
+        if is_group and envio_sucesso and CONFIG['MENSAO_NUM']:
+            try:
+                num = CONFIG['MENSAO_NUM']
+                payload_men = {
+                    "phone": msg_dest,
+                    "message": f"🔔 Alerta verificado: @{num}",
+                    "mentioned": [f"{num}@c.us"],
+                    "isGroup": True
+                }
+                
+                r_men = session.post(
+                    f'{CONFIG["WPP_URL"]}/send-mentioned', 
+                    headers=headers, 
+                    json=payload_men, 
+                    timeout=15
+                )
+                log_debug(f"MENCAO STATUS: {r_men.text}")
+            except Exception as e_men:
+                log_debug(f"ERRO AO ENVIAR MENÇÃO: {e_men}")
+
+except Exception as e:
+    log_debug(f"ERRO CRÍTICO NO SCRIPT: {str(e)}")
