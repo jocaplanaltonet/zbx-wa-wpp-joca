@@ -87,6 +87,18 @@ curl -X POST '[http://127.0.0.1:21465/api/SESSAO_ZABBIX/send-message](http://127
 ## 5. Identificando Grupos (JID)
 
 1. Identifique o ID que termina com @g.us usando seu script get_groups.py.
+Abra o get_groups.py e verifique se as variáveis de conexão estão corretas:
+
+```python
+URL = "http://127.0.0.1:21465/api/SESSAO_ZABBIX/all-groups"
+TOKEN = "$2b$10$sMn3zJy1NFPgQMmOSIoSGealQBi8MOxaEy_xojujhmoeXdOyl5qlm"
+```
+No terminal do seu servidor ou computador, execute o comando:
+
+```bash
+python3 get_groups.py
+```
+
 2. Utilize este ID no campo Enviar para dentro do Zabbix.
 
 ---
