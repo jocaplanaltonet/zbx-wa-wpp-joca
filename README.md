@@ -33,7 +33,12 @@ pip3 install requests
 
 ## 2. Configuracao do Script (jocawpp.py)
 
-Mova o arquivo para /usr/lib/zabbix/alertscripts/ e edite as configuracoes iniciais.
+Copie o arquivo jocawpp.py.exemple para /usr/lib/zabbix/alertscripts/jocawpp.py e edite as configuracoes iniciais.
+
+```bash
+cp jocawpp.py.exemple /usr/lib/zabbix/alertscripts/jocawpp.py
+```
+nano /usr/lib/zabbix/alertscripts/jocawpp.py
 
 ```python
 CONFIG = {
