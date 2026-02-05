@@ -1,67 +1,105 @@
-# 🚀 Zabbix WhatsApp Integration - Planalto Net CGR
+# Zabbix WhatsApp Integration - zbx-wa-wpp-joca
 
-![Zabbix](https://img.shields.io/badge/Zabbix-7.4-blue?style=for-the-badge&logo=zabbix)
-![Python](https://img.shields.io/badge/Python-3.x-yellow?style=for-the-badge&logo=python)
+<p align="left">
+  <img src="https://camo.githubusercontent.com/db193e65958c02b2ea3376aded7769fe269dd57f4544aefa9f5d322b5153977d/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f5a61626269782d372e342d626c75653f7374796c653d666f722d7468652d6261646765266c6f676f3d7a6162626978" alt="Zabbix 7.4">
+  <img src="https://camo.githubusercontent.com/b982c853c8b58177c36e2cfb1959ac36129ed04c140c3c77586aa8077a33004f/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f507974686f6e2d332e782d79656c6c6f773f7374796c653d666f722d7468652d6261646765266c6f676f3d707974686f6e" alt="Python 3.x">
+</p>
 
-Este guia descreve como configurar o envio de alertas do Zabbix para o WhatsApp com gráficos e menções em grupo.
-
----
-
-## 1. Instalação do WPPConnect Server
-O WPPConnect transforma seu WhatsApp em uma API robusta.
-
-\`\`\`bash
-# Clone o repositório oficial
-git clone [https://github.com/wppconnect-team/wppconnect-server.git](https://github.com/wppconnect-team/wppconnect-server.git)
-cd wppconnect-server
-
-# Instalação de dependências do sistema
-sudo apt-get install -y libxshmfence-dev libgbm-dev wget unzip fontconfig locales gconf-service libasound2 libatk1.0-0 libc6 libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgcc1 libgconf-2-4 libgdk-pixbuf2.0-0 libglib2.0-0 libgtk-3-0 libnspr4 libpango-1.0-0 libpangocairo-1-0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 ca-certificates fonts-liberation libappindicator1 libnss3 lsb-release xdg-utils libvips-dev
-
-# Instale as dependências e gere a build
-npm install
-yarn build
-\`\`\`
+Este guia descreve como configurar o envio de alertas do Zabbix para o WhatsApp com graficos e mencoes em grupo.
 
 ---
 
-## 2. Rodando em Produção com PM2
-\`\`\`bash
-sudo npm install -g pm2
-pm2 start dist/server.js --name \"wpp-server\"
-pm2 startup
+## 1. Requisitos do Sistema
+
+### A. WPPConnect-Server
+O bot depende de uma instancia ativa do WPPConnect-Server.
+* Creditos: Projeto baseado na API do [WPPConnect Team](https://github.com/wppconnect-team).
+* Documentacao PM2: [wppconnect.io/docs/pm2](https://wppconnect.io/pt-BR/docs/projects/wppserver/pm2).
+```bash
 pm2 save
-\`\`\`
+pm2 log wppconnect-server
+```
+
+### B. Ambiente Python 3
+O script requer Python 3 e a biblioteca requests ja deve os ter instalados.
+
+```bash
+sudo apt update
+sudo apt install python3 python3-pip -y
+pip3 install requests
+```
 
 ---
 
-## 3. Integração com Zabbix
-### Importação do Media Type
-Este repositório contém o arquivo: \`Whatsapp - Wpp - Png - Joca.yaml\`.
-1. No Zabbix, acesse **Alerts -> Media Types**.
-2. Clique no botão **Import** e selecione o arquivo.
+## 2. Configuracao do Script (jocawpp.py)
 
-### Instalação do Script de Alerta
-\`\`\`bash
-pip3 install requests
+Mova o arquivo para /usr/lib/zabbix/alertscripts/ e edite as configuracoes iniciais.
+
+```python
+CONFIG = {
+    "WPP_URL": '[http://127.0.0.1:21465/api/SESSAO_ZABBIX](http://127.0.0.1:21465/api/SESSAO_ZABBIX)',
+    "WPP_TOKEN": '$2b$10$sMn3zJy1NFPgQMmOSIoSGealQBi8MOxaEy_xojujhmoeXdOyl5qlm', 
+    "ZABBIX_URL": '[http://127.0.0.1/zabbix](http://127.0.0.1/zabbix)',
+    "ZABBIX_USER": 'Admin',
+    "ZABBIX_PASS": 'zabbix',
+    "LOG_FILE": '/tmp/zabbix_wpp_debug.log',
+    "MENSAO": "558112345678" 
+}
+```
+
+---
+
+## 3. Permissoes de Sistema
+
+```bash
 chown zabbix:zabbix /usr/lib/zabbix/alertscripts/jocawpp.py
 chmod +x /usr/lib/zabbix/alertscripts/jocawpp.py
-\`\`\`
+
+touch /tmp/zabbix_wpp_debug.log
+chown zabbix:zabbix /tmp/zabbix_wpp_debug.log
+chmod 664 /tmp/zabbix_wpp_debug.log
+```
 
 ---
 
-## 4. Diferenciais do Script
-* **Regex:** Captura IDs no formato \`Item ID:{ITEM.ID}\`.
-* **Data:** Converte automaticamente para **DD/MM/YYYY**.
-* **Menção:** Notifica automaticamente o usuário **558199999999**.
+## 4. Testes de Validacao
+
+### A. Teste via Python
+```bash
+python3 /usr/lib/zabbix/alertscripts/jocawpp.py "Teste de Alerta" "Zabbix" "ID_DO_GRUPO@g.us"
+```
+
+### B. Teste via cURL (Individual)
+```bash
+curl -X POST '[http://127.0.0.1:21465/api/SESSAO_ZABBIX/send-message](http://127.0.0.1:21465/api/SESSAO_ZABBIX/send-message)' \
+-H 'Authorization: Bearer $TOKEN' \
+-H 'Content-Type: application/json' \
+-d '{"phone": "558188887777", "message": "Teste Individual"}'
+```
 
 ---
 
-## 5. Monitoramento e Logs
-\`\`\`bash
-tail -f /tmp/zabbix_wpp_debug.log # Log do script Python
-pm2 logs wpp-server             # Log do servidor WhatsApp
-\`\`\`
+## 5. Identificando Grupos (JID)
+
+1. Identifique o ID que termina com @g.us usando seu script get_groups.py.
+2. Utilize este ID no campo Enviar para dentro do Zabbix.
 
 ---
-**Desenvolvido por Joca - Planalto Net CGR** 🚀'''
+
+## 6. Configuracao no Painel Zabbix
+
+### A. Importacao do Template
+1. Va em Alertas -> Tipos de Midia -> Importar.
+
+### B. Parametros do Script
+1. {ALERT.MESSAGE}
+2. {ALERT.SUBJECT}
+3. {ALERT.SENDTO}
+
+---
+
+## 7. Monitoramento e Logs
+
+```bash
+tail -f /tmp/zabbix_wpp_debug.log
+```
