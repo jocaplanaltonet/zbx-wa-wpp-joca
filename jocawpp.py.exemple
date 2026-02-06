@@ -110,7 +110,7 @@ try:
                 num = CONFIG['MENSAO_NUM']
                 payload_men = {
                     "phone": msg_dest,
-                    "message": f"🔔 Alerta verificado: @{num}",
+                    "message": f"🔔 Atencao!: @{num}",
                     "mentioned": [f"{num}@c.us"],
                     "isGroup": True
                 }
