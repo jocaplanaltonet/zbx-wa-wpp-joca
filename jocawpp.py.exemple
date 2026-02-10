@@ -1,191 +1,86 @@
-6#!/usr/bin/python3
-# -*- coding: utf-8 -*-
-# Planalto Net CGR - Script Final Zabbix + Gráfico + Menção Inteligente
-import os, re, sys, requests, json, datetime
-
-# ==========================================
-# 1. ÁREA DE CONFIGURAÇÃO
-# ==========================================
-CONFIG = {
-    "WPP_URL": 'http://127.0.0.1:21465/api/plnt',
-    "WPP_TOKEN": '$2b$10$sMn3zJy1NFPgQMmOSIoSGealQBi8MOxaEy_xojujhmoeXdOyl5qlm',
-    "ZABBIX_URL": 'http://127.0.0.1/zabbix',
-    "ZABBIX_USER": 'Admin',
-    "ZABBIX_PASS": 'zabbix',
-    "LOG_FILE": '/tmp/zabbix_wpp_debug.log',
-    # Deixe vazio "" para desativar a menção globalmente
-    "MENSAO_NUM": "558187654321" 
-}
-
-def log_debug(msg):
-    agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    try:
-        with open(CONFIG["LOG_FILE"], 'a') as f:
-            f.write(f"[{agora}] {msg}\n")
-    except: pass
-
-def extrair_id(corpo):
-    # Captura o ID do item para gerar o gráfico
-    match = re.search(r'Item ID:\s*(\d+)', corpo)
-    return match.group(1) if match else None
-
-def tratar_destino(raw_dest):
-    d = str(raw_dest).strip()
-    # Verifica se é ID de grupo (contém hífen ou padrão 1203...)
-    if "-" in d or (d.startswith("1203") and len(d) >= 18):
-        return (d if "@g.us" in d else f"{d}@g.us"), True
-    # Se for número individual
-    id_puro = "".join(filter(str.isdigit, d.split('@')[0]))
-    return id_puro, False
-
-# ==========================================
-# 2. LÓGICA DE EXECUÇÃO
-# ==========================================
-try:
-    if len(sys.argv) < 4:
-        log_debug("ERRO: Argumentos insuficientes (Corpo, Título, Destino)")
-        sys.exit(1)
-
-    msg_corpo  = sys.argv[1]
-    msg_titulo = sys.argv[2]
-    msg_dest, is_group = tratar_destino(sys.argv[3])
-    
-    zbx_id = extrair_id(msg_corpo)
-    envio_sucesso = False
-    real_chat_id = msg_dest 
-
-    headers = {
-        'Authorization': f'Bearer {CONFIG["WPP_TOKEN"]}',
-        'Content-Type': 'application/json'
-    }
-
-    with requests.Session() as session:
-        # --- PASSO 1: ENVIO DO TEXTO DO ALERTA ---
-        payload_texto = {
-            "phone": msg_dest, 
-            "message": f"*{msg_titulo}*\n{msg_corpo}",
-            "isGroup": is_group
-        }
-        r_text = session.post(f'{CONFIG["WPP_URL"]}/send-message', headers=headers, json=payload_texto, timeout=25)
-        
-        if r_text.status_code in [200, 201]:
-            envio_sucesso = True
-            try:
-                # Captura o chatId real para evitar erros em envios subsequentes
-                real_chat_id = r_text.json()['response'][0]['chatId']
-            except: pass
-        log_debug(f"TEXTO STATUS: {r_text.status_code}")
-
-        # --- PASSO 2: ENVIO DO GRÁFICO (IMAGEM) ---
-        if zbx_id and envio_sucesso:
-            try:
-                # Autenticação no Zabbix para pegar o cookie da imagem
-                session.post(f'{CONFIG["ZABBIX_URL"]}/index.php', 
-                             data={'name': CONFIG["ZABBIX_USER"], 'password': CONFIG["ZABBIX_PASS"], 'enter': 'Sign in'})
-                
-                url_img = f'{CONFIG["ZABBIX_URL"]}/chart.php?itemids[0]={zbx_id}&width=800&height=300'
-                res_img_file = session.get(url_img, timeout=30)
-                
-                if res_img_file.status_code == 200:
-                    img_path = f"/tmp/zbx_{zbx_id}.png"
-                    with open(img_path, 'wb') as f: f.write(res_img_file.content)
-                    
-                    with open(img_path, 'rb') as f_img:
-                        r_img = requests.post(
-                            f'{CONFIG["WPP_URL"]}/send-image', 
-                            headers={'Authorization': f'Bearer {CONFIG["WPP_TOKEN"]}'}, 
-                            data={'phone': real_chat_id, 'caption': f'📈 Gráfico: {msg_titulo}', 'isGroup': str(is_group).lower()}, 
-                            files={'file': f_img},
-                            timeout=45
-                        )
-                        log_debug(f"IMAGEM STATUS: {r_img.status_code}")
-                    
-                    if os.path.exists(img_path): os.remove(img_path)
-            except Exception as e_img:
-                log_debug(f"ERRO AO GERAR/ENVIAR IMAGEM: {e_img}")
-
-        # --- PASSO 3: MENÇÃO (SÓ SE FOR GRUPO E TIVER NÚMERO CONFIGURADO) ---
-        if is_group and envio_sucesso and CONFIG['MENSAO_NUM']:
-            try:
-                num = CONFIG['MENSAO_NUM']
-                payload_men = {
-                    "phone": msg_dest,
-                    "message": f"🔔 Atencao!: @{num}",
-                    "mentioned": [f"{num}@c.us"],
-                    "isGroup": True
-                }
-                
-                r_men = session.post(
-                    f'{CONFIG["WPP_URL"]}/send-mentioned', 
-                    headers=headers, 
-                    json=payload_men, 
-                    timeout=15
-                )
-                log_debug(f"MENCAO STATUS: {r_men.text}")
-            except Exception as e_men:
-                log_debug(f"ERRO AO ENVIAR MENÇÃO: {e_men}")
-
-except Exception as e:
-    log_debug(f"ERRO CRÍTICO NO SCRIPT: {str(e)}")
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 import os, re, sys, requests, datetime, json
 
+# --- CONFIGURAÇÕES DE EXEMPLO ---
+# Altere os valores abaixo de acordo com o seu ambiente
 CONFIG = {
-    "WPP_URL": 'http://127.0.0.1:21465/api/plnt',
-    "WPP_TOKEN": '$2b$10$sMn3zJy1NFPgQMmOSIoSGealQBi8MOxaEy_xojujhmoeXdOyl5qlm',
+    # URL da sua API de WhatsApp (Ex: http://seu_ip:port/api/instancia)
+    "WPP_URL": 'http://127.0.0.1:21465/api/sua_instancia',
+    
+    # Token de autenticação da sua API
+    "WPP_TOKEN": 'SEU_TOKEN_AQUI_OU_CHAVE_JWT',
+    
+    # URL interna ou externa do Zabbix para capturar os gráficos
     "ZBX_URL": 'http://localhost/zabbix', 
-    "ZBX_USER": 'whatsapp',
-    "ZBX_PASS": 'Admin@1982',
+    
+    # Usuário do Zabbix com permissão de leitura nos hosts
+    "ZBX_USER": 'usuario_api_whatsapp',
+    
+    # Senha do usuário do Zabbix
+    "ZBX_PASS": 'senha_segura_123',
+    
+    # Caminho onde o script salvará o log de erros/envios
     "LOG_FILE": '/var/tmp/zabbix/debug_wpp.log',
+    
+    # Pasta onde os gráficos (PNG) serão salvos temporariamente
     "IMG_PATH": '/var/tmp/zabbix/'
 }
 
 def log(msg):
+    """Gera logs com data e hora para facilitar o debug"""
     agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     texto = f"[{agora}] {msg}"
     print(texto)
     try:
+        # Cria a pasta de log se ela não existir
         if not os.path.exists(os.path.dirname(CONFIG["LOG_FILE"])):
             os.makedirs(os.path.dirname(CONFIG["LOG_FILE"]), exist_ok=True)
         with open(CONFIG["LOG_FILE"], 'a') as f: f.write(texto + "\n")
     except: pass
 
 try:
+    # Captura os argumentos enviados pelo Zabbix Media Type
+    # Exemplo de chamada: ./jocawpp.py "{ALERT.MESSAGE}" "{ALERT.SUBJECT}" "{ALERT.SENDTO}"
     corpo = sys.argv[1] if len(sys.argv) > 1 else ""
     titulo = sys.argv[2] if len(sys.argv) > 2 else ""
     dest_raw = sys.argv[3].strip() if len(sys.argv) > 3 else ""
 
-    # Identifica Grupo vs Contato
+    if not dest_raw:
+        log("ERRO: O destinatário (parâmetro 3) não foi informado.")
+        sys.exit(1)
+
+    # Lógica para diferenciar Grupos de Contatos Individuais
+    # Grupos no WhatsApp geralmente possuem um '-' ou começam com '1203'
     es_grupo = '-' in dest_raw or dest_raw.startswith('1203')
     
     if es_grupo:
         dest = dest_raw if '@g.us' in dest_raw else f"{dest_raw}@g.us"
-        log(f"Destino Grupo: {dest}")
+        log(f"Destino identificado como GRUPO: {dest}")
     else:
-        # Limpa o número antes para evitar erro de f-string com backslash
+        # Remove caracteres não numéricos para contatos individuais
         num_limpo = re.sub(r'\D', '', dest_raw)
         dest = f"{num_limpo}@c.us"
-        log(f"Destino Contato: {dest}")
+        log(f"Destino identificado como CONTATO: {dest}")
 
-    # Lógica de Símbolos Automáticos
-    if "remover" in corpo.lower():
-        titulo = f"🔴 {titulo}"
-    
-    if "quarentena" in corpo.lower():
-        corpo = re.sub(r'(quarentena)', r'\1 ❗', corpo, flags=re.IGNORECASE)
-
-    # Extração do ID do Gráfico
+    # Tenta encontrar o "Item ID: 12345" no corpo da mensagem para gerar gráfico
     zbx_id_match = re.search(r'Item ID:\s*(\d+)', corpo)
     zbx_id = zbx_id_match.group(1) if zbx_id_match else None
 
     headers = {'Authorization': f"Bearer {CONFIG['WPP_TOKEN']}"}
     envio_ok = False
 
+    # Se encontrar um Item ID, tenta baixar o gráfico do Zabbix
     if zbx_id:
         try:
+            log(f"Iniciando captura do gráfico para o Item ID: {zbx_id}")
             with requests.Session() as s:
-                s.post(f"{CONFIG['ZBX_URL']}/index.php", data={'name': CONFIG['ZBX_USER'], 'password': CONFIG['ZBX_PASS'], 'enter': 'Sign in'}, timeout=10)
+                # Faz login na interface Web do Zabbix
+                s.post(f"{CONFIG['ZBX_URL']}/index.php", 
+                       data={'name': CONFIG['ZBX_USER'], 'password': CONFIG['ZBX_PASS'], 'enter': 'Sign in'}, 
+                       timeout=10)
+                
+                # Requisição da imagem do gráfico
                 res_img = s.get(f"{CONFIG['ZBX_URL']}/chart.php?itemids[0]={zbx_id}&width=800&height=300", timeout=20)
                 
                 if "image" in res_img.headers.get('Content-Type', ''):
@@ -195,18 +90,25 @@ try:
                     payload_img = {'phone': dest, 'caption': f"*{titulo}*\n{corpo}"}
                     if es_grupo: payload_img['isGroup'] = 'true'
                     
+                    # Envia para a API como imagem
                     with open(path, 'rb') as f_img:
-                        r = requests.post(f"{CONFIG['WPP_URL']}/send-image", headers=headers, data=payload_img, files={'file': ('graph.png', f_img, 'image/png')}, timeout=40)
-                        log(f"Resposta API Imagem: {r.text}")
-                        if '"success"' in r.text.lower(): envio_ok = True
+                        r = requests.post(f"{CONFIG['WPP_URL']}/send-image", 
+                                          headers=headers, 
+                                          data=payload_img, 
+                                          files={'file': ('graph.png', f_img, 'image/png')}, 
+                                          timeout=40)
+                        if '"success"' in r.text.lower() or '"true"' in r.text.lower(): 
+                            envio_ok = True
+                            log("Mensagem com imagem enviada com sucesso.")
         except Exception as e_img:
-            log(f"Erro imagem: {str(e_img)}")
+            log(f"Aviso: Não foi possível enviar o gráfico. Motivo: {str(e_img)}")
 
+    # Se não houver gráfico ou o envio da imagem falhar, envia apenas o texto
     if not envio_ok:
         payload_txt = {"phone": dest, "message": f"*{titulo}*\n{corpo}"}
         if es_grupo: payload_txt['isGroup'] = True
         r = requests.post(f"{CONFIG['WPP_URL']}/send-message", headers=headers, json=payload_txt, timeout=20)
-        log(f"Resposta API Texto: {r.text}")
+        log(f"Mensagem de texto enviada. Resposta API: {r.text}")
 
 except Exception as e:
-    log(f"ERRO CRITICO: {str(e)}")
+    log(f"ERRO CRÍTICO: {str(e)}")
