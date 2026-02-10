@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+6#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 # Planalto Net CGR - Script Final Zabbix + Gráfico + Menção Inteligente
 import os, re, sys, requests, json, datetime
@@ -127,3 +127,86 @@ try:
 
 except Exception as e:
     log_debug(f"ERRO CRÍTICO NO SCRIPT: {str(e)}")
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+import os, re, sys, requests, datetime, json
+
+CONFIG = {
+    "WPP_URL": 'http://127.0.0.1:21465/api/plnt',
+    "WPP_TOKEN": '$2b$10$sMn3zJy1NFPgQMmOSIoSGealQBi8MOxaEy_xojujhmoeXdOyl5qlm',
+    "ZBX_URL": 'http://localhost/zabbix', 
+    "ZBX_USER": 'whatsapp',
+    "ZBX_PASS": 'Admin@1982',
+    "LOG_FILE": '/var/tmp/zabbix/debug_wpp.log',
+    "IMG_PATH": '/var/tmp/zabbix/'
+}
+
+def log(msg):
+    agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    texto = f"[{agora}] {msg}"
+    print(texto)
+    try:
+        if not os.path.exists(os.path.dirname(CONFIG["LOG_FILE"])):
+            os.makedirs(os.path.dirname(CONFIG["LOG_FILE"]), exist_ok=True)
+        with open(CONFIG["LOG_FILE"], 'a') as f: f.write(texto + "\n")
+    except: pass
+
+try:
+    corpo = sys.argv[1] if len(sys.argv) > 1 else ""
+    titulo = sys.argv[2] if len(sys.argv) > 2 else ""
+    dest_raw = sys.argv[3].strip() if len(sys.argv) > 3 else ""
+
+    # Identifica Grupo vs Contato
+    es_grupo = '-' in dest_raw or dest_raw.startswith('1203')
+    
+    if es_grupo:
+        dest = dest_raw if '@g.us' in dest_raw else f"{dest_raw}@g.us"
+        log(f"Destino Grupo: {dest}")
+    else:
+        # Limpa o número antes para evitar erro de f-string com backslash
+        num_limpo = re.sub(r'\D', '', dest_raw)
+        dest = f"{num_limpo}@c.us"
+        log(f"Destino Contato: {dest}")
+
+    # Lógica de Símbolos Automáticos
+    if "remover" in corpo.lower():
+        titulo = f"🔴 {titulo}"
+    
+    if "quarentena" in corpo.lower():
+        corpo = re.sub(r'(quarentena)', r'\1 ❗', corpo, flags=re.IGNORECASE)
+
+    # Extração do ID do Gráfico
+    zbx_id_match = re.search(r'Item ID:\s*(\d+)', corpo)
+    zbx_id = zbx_id_match.group(1) if zbx_id_match else None
+
+    headers = {'Authorization': f"Bearer {CONFIG['WPP_TOKEN']}"}
+    envio_ok = False
+
+    if zbx_id:
+        try:
+            with requests.Session() as s:
+                s.post(f"{CONFIG['ZBX_URL']}/index.php", data={'name': CONFIG['ZBX_USER'], 'password': CONFIG['ZBX_PASS'], 'enter': 'Sign in'}, timeout=10)
+                res_img = s.get(f"{CONFIG['ZBX_URL']}/chart.php?itemids[0]={zbx_id}&width=800&height=300", timeout=20)
+                
+                if "image" in res_img.headers.get('Content-Type', ''):
+                    path = os.path.join(CONFIG['IMG_PATH'], f"grafico_{zbx_id}.png")
+                    with open(path, 'wb') as f: f.write(res_img.content)
+                    
+                    payload_img = {'phone': dest, 'caption': f"*{titulo}*\n{corpo}"}
+                    if es_grupo: payload_img['isGroup'] = 'true'
+                    
+                    with open(path, 'rb') as f_img:
+                        r = requests.post(f"{CONFIG['WPP_URL']}/send-image", headers=headers, data=payload_img, files={'file': ('graph.png', f_img, 'image/png')}, timeout=40)
+                        log(f"Resposta API Imagem: {r.text}")
+                        if '"success"' in r.text.lower(): envio_ok = True
+        except Exception as e_img:
+            log(f"Erro imagem: {str(e_img)}")
+
+    if not envio_ok:
+        payload_txt = {"phone": dest, "message": f"*{titulo}*\n{corpo}"}
+        if es_grupo: payload_txt['isGroup'] = True
+        r = requests.post(f"{CONFIG['WPP_URL']}/send-message", headers=headers, json=payload_txt, timeout=20)
+        log(f"Resposta API Texto: {r.text}")
+
+except Exception as e:
+    log(f"ERRO CRITICO: {str(e)}")
