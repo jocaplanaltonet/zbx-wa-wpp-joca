@@ -1,0 +1,54 @@
+import requests
+import os
+import json
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def teste_bruto():
+    # Pegando as variáveis do seu .env
+    url = os.getenv("WA_WEBHOOK_URL")
+    token = os.getenv("WA_TOKEN")
+    destino = os.getenv("WA_TO").strip()
+    mencao = os.getenv("WA_MENTIONS").strip()
+
+    # Formata o ID do grupo se necessário
+    if "@g.us" not in destino:
+        destino = f"{destino}@g.us"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
+    # Este payload usa os nomes de campos mais comuns em integrações Zabbix/WPP
+    # e inclui o número no texto (essencial para o 'link' acontecer)
+    payload = {
+        "phone": destino,
+        "message": f"@{mencao} TESTE DE MENCÃO", 
+        "isGroup": True,
+        "mentioned": [f"{mencao}@c.us"]
+    }
+
+    print(f"--- CONFIGURAÇÃO ---")
+    print(f"URL: {url}")
+    print(f"Grupo: {destino}")
+    print(f"Número para mencionar: {mencao}")
+    print(f"--------------------\n")
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
+        
+        print(f"Status Code: {response.status_code}")
+        print(f"Resposta do Servidor: {response.text}")
+        
+        if response.status_code == 200 or response.status_code == 201:
+            print("\n✅ Mensagem enviada! Verifique se ficou AZUL no celular.")
+        else:
+            print("\n❌ O servidor recebeu, mas retornou erro.")
+
+    except Exception as e:
+        print(f"💥 Erro ao conectar no servidor: {e}")
+
+if __name__ == "__main__":
+    teste_bruto()
